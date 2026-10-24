@@ -87,11 +87,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$APK" ]; then APK="app/build/outputs/apk/debug/app-debug.apk"; fi
-          if [ ! -f "$APK" ]; then echo "No APK found, skipping release"; exit 0; fi
-          NAME=$(basename "$APK")
-          echo "Publishing $NAME for tag $TAG"
+          VER="${TAG#v}"
+          mapfile -t APKS < <(find app/build/outputs/apk -name '*.apk' | sort)
+          if [ ${#APKS[@]} -eq 0 ]; then echo "No APK found, skipping release"; exit 0; fi
           REL_ID=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG" | jq -r '.id // empty')
           if [ -z "$REL_ID" ]; then
@@ -101,15 +99,22 @@ jobs:
               "https://api.github.com/repos/$GITHUB_REPOSITORY/releases" | jq -r '.id')
           fi
           echo "Release id: $REL_ID"
-          EXISTING=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$REL_ID/assets" \
-            | jq -r ".[] | select(.name==\"$NAME\") | .id")
-          if [ -n "$EXISTING" ]; then
-            curl -s -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$EXISTING" >/dev/null
-          fi
-          curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @"$APK" \
-            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$REL_ID/assets?name=$NAME" \
-            | jq -r '"uploaded: " + (.browser_download_url // .message)'
+          ASSETS_JSON=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$REL_ID/assets")
+          for APK in "${APKS[@]}"; do
+            BASE=$(basename "$APK")
+            SUFFIX=$(echo "$BASE" | sed -E 's/^app-(.*)-(debug|release)\.apk$/\1/')
+            [ "$SUFFIX" = "$BASE" ] && SUFFIX="apk"
+            NAME="lxserver-mobile-${VER}-${SUFFIX}.apk"
+            echo "==> $APK -> $NAME"
+            EXISTING=$(echo "$ASSETS_JSON" | jq -r ".[] | select(.name==\"$NAME\") | .id")
+            if [ -n "$EXISTING" ]; then
+              curl -s -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$EXISTING" >/dev/null
+            fi
+            curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$APK" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$REL_ID/assets?name=$NAME" \
+              | jq -r '"   uploaded: " + (.browser_download_url // .message)'
+          done

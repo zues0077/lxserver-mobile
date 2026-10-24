@@ -17,20 +17,35 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivitySettingsBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        setSupportActionBar(binding.toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.title = getString(R.string.title_settings)
+        try {
+            binding = ActivitySettingsBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+            setSupportActionBar(binding.toolbar)
+            supportActionBar?.setDisplayHomeAsUpEnabled(true)
+            supportActionBar?.title = getString(R.string.title_settings)
 
-        prefs = AppPreferences(this)
-        binding.etServerUrl.setText(prefs.serverUrl)
-        binding.etUsername.setText(prefs.username)
-        binding.etPassword.setText(prefs.password)
-        binding.switchBuiltin.isChecked = prefs.useBuiltin
+            prefs = AppPreferences(this)
+            binding.etServerUrl.setText(prefs.serverUrl)
+            binding.etUsername.setText(prefs.username)
+            binding.etPassword.setText(prefs.password)
+            binding.switchBuiltin.isChecked = prefs.useBuiltin
 
-        binding.btnSave.setOnClickListener { save() }
-        binding.btnTest.setOnClickListener { testConnection() }
+            binding.btnSave.setOnClickListener { save() }
+            binding.btnTest.setOnClickListener { testConnection() }
+        } catch (t: Throwable) {
+            showStartupCrash(t)
+        }
+    }
+
+    private fun showStartupCrash(t: Throwable) {
+        val where = CrashLogger.save(this, t)
+        val tv = android.widget.TextView(this).apply {
+            setPadding(48, 96, 48, 48)
+            textSize = 11f
+            text = "设置页启动失败：\n\n" + android.util.Log.getStackTraceString(t) +
+                "\n\n日志已保存到：\n" + (where ?: "（保存失败）")
+        }
+        setContentView(android.widget.ScrollView(this).apply { addView(tv) })
     }
 
     private fun normalize(raw: String): String {

@@ -11,8 +11,22 @@ android {
         applicationId = "com.zues007.lxservermobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
+    }
+
+    // Produce per-ABI APKs plus a universal APK so the Release mirrors the
+    // multi-variant layout used by other LX clients.
+    // NOTE: this app ships NO native libraries, so every variant is effectively
+    // identical bytecode — the "universal" APK is the one to install on any
+    // device. ABI is therefore NOT the cause of any startup crash.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
     }
 
     signingConfigs {

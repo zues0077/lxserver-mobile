@@ -20,15 +20,35 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        setSupportActionBar(binding.toolbar)
+        try {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+            setSupportActionBar(binding.toolbar)
 
-        prefs = AppPreferences(this)
-        webView = binding.webview
+            prefs = AppPreferences(this)
+            webView = binding.webview
 
-        setupWebView()
-        loadInitial()
+            setupWebView()
+            loadInitial()
+        } catch (t: Throwable) {
+            showStartupCrash(t)
+        }
+    }
+
+    /**
+     * If anything throws during startup we render the stack trace on screen
+     * (instead of a silent crash) so the user can screenshot it, and persist it
+     * to a file that can be shared.
+     */
+    private fun showStartupCrash(t: Throwable) {
+        val where = CrashLogger.save(this, t)
+        val tv = android.widget.TextView(this).apply {
+            setPadding(48, 96, 48, 48)
+            textSize = 11f
+            text = "启动失败：\n\n" + android.util.Log.getStackTraceString(t) +
+                "\n\n日志已保存到：\n" + (where ?: "（保存失败）")
+        }
+        setContentView(android.widget.ScrollView(this).apply { addView(tv) })
     }
 
     private fun setupWebView() {
