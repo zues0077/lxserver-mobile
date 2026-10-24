@@ -1,0 +1,115 @@
+name: Build APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # secrets.* is NOT allowed in `if:` expressions; compute the presence of the
+    # signing key once here (secrets IS allowed in `env:`) and gate steps with it.
+    env:
+      HAS_SIGNING: ${{ secrets.SIGNING_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        run: |
+          ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          export PATH="$PATH:$ANDROID_HOME/platform-tools"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses || true
+            "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" "platform-tools" || true
+          else
+            echo "sdkmanager not found at $SDKMANAGER; relying on the preinstalled Android SDK."
+          fi
+          echo "ANDROID_HOME is $ANDROID_HOME"
+
+      # Built-in frontend is OPTIONAL. It is bundled from lxserver's main branch at
+      # build time so the app can run fully offline. If the fetch fails (e.g. no
+      # network), the app still works in remote mode, so we only warn.
+      - name: Fetch bundled frontend (built-in mode, optional)
+        run: bash scripts/fetch-frontend.sh "main" || echo "::warning::Bundled frontend fetch failed; built-in mode will be unavailable (remote mode is unaffected)."
+
+      - name: Decode signing keystore
+        if: ${{ env.HAS_SIGNING == 'true' }}
+        run: |
+          echo "${{ secrets.SIGNING_KEY }}" | base64 -d > "${{ github.workspace }}/keystore.jks"
+
+      - name: Install Gradle 8.9 (no wrapper needed)
+        run: |
+          curl -sL --retry 3 -o gradle.zip https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle.zip
+          mv gradle-8.9 gradle-home
+
+      - name: Build Release APK (signed)
+        if: ${{ env.HAS_SIGNING == 'true' }}
+        env:
+          SIGNING_STORE_FILE: ${{ github.workspace }}/keystore.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradle-home/bin/gradle assembleRelease --no-daemon
+
+      - name: Build Debug APK (no signing key configured)
+        if: ${{ env.HAS_SIGNING != 'true' }}
+        run: ./gradle-home/bin/gradle assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lxserver-mobile-apk
+          path: app/build/outputs/apk
+          if-no-files-found: error
+
+      # Publish a GitHub Release with the APK attached. Done via the REST API
+      # (not a third-party action) so it works reliably in any environment.
+      - name: Publish Release (tag builds only)
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK" ]; then APK="app/build/outputs/apk/debug/app-debug.apk"; fi
+          if [ ! -f "$APK" ]; then echo "No APK found, skipping release"; exit 0; fi
+          NAME=$(basename "$APK")
+          echo "Publishing $NAME for tag $TAG"
+          REL_ID=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG" | jq -r '.id // empty')
+          if [ -z "$REL_ID" ]; then
+            REL_ID=$(curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"generate_release_notes\":true}" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases" | jq -r '.id')
+          fi
+          echo "Release id: $REL_ID"
+          EXISTING=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$REL_ID/assets" \
+            | jq -r ".[] | select(.name==\"$NAME\") | .id")
+          if [ -n "$EXISTING" ]; then
+            curl -s -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$EXISTING" >/dev/null
+          fi
+          curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$APK" \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$REL_ID/assets?name=$NAME" \
+            | jq -r '"uploaded: " + (.browser_download_url // .message)'

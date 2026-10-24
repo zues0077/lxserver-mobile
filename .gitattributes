@@ -1,0 +1,4 @@
+# Normalize line endings: store LF, check out LF everywhere.
+# Keeps scripts/fetch-frontend.sh and Gradle files safe on Linux CI.
+* text=auto eol=lf
+*.bat text eol=crlf

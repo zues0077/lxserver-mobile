@@ -1,0 +1,25 @@
+# Built artifacts
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+*/build/
+captures/
+.externalNativeBuild/
+
+# Signing / secrets
+keystore.jks
+*.jks
+signing.properties
+
+# Gradle distribution downloaded by CI
+gradle-home/
+gradle.zip
+
+# Bundled frontend (fetched at build time by scripts/fetch-frontend.sh)
+app/src/main/assets/webplayer/
+
+# Local project tooling / memory (not part of the shipped app)
+.workbuddy/

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive-icon foreground: a simple music note.
+  IMPORTANT: Android's VectorDrawable only supports <vector>, <group>, <path> and
+  <clip-path>. SVG primitives such as <ellipse>, <rect>, <circle> and <line> are
+  NOT recognized and make AAPT fail with "attribute android:cx not found" etc.
+  Everything below is therefore expressed as <path> with pathData.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- note head: ellipse centred at (34,74) with rx=12, ry=9 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,74 C46,79 40.63,83 34,83 C27.37,83 22,79 22,74 C22,69 27.37,65 34,65 C40.63,65 46,69 46,74 Z" />
+
+    <!-- stem: rect x=44 y=24 w=7 h=52 -> (44,24) to (51,76) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,24 L51,24 L51,76 L44,76 Z" />
+
+    <!-- flag -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,24 L70,30 L70,38 L51,32 Z" />
+
+</vector>
