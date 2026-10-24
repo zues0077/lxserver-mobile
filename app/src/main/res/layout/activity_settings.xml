@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -60,11 +61,17 @@
                     android:autofillHints="password" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <com.google.android.material.materialswitch.MaterialSwitch
+            <!-- NOTE: must NOT be materialswitch.MaterialSwitch (a Material 3 component).
+                 Under this app's Material Components (M2) theme, MaterialSwitch enables
+                 showText but gets null textOn/textOff, so SwitchCompat.makeLayout() NPEs
+                 during onMeasure and the app crashes on any device. SwitchMaterial is the
+                 M2 equivalent; showText=false is an extra belt-and-braces guard. -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switch_builtin"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/use_builtin"
+                app:showText="false"
                 android:layout_marginTop="16dp" />
 
             <LinearLayout
