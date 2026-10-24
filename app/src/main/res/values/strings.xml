@@ -9,8 +9,7 @@
 
     <string name="hint_server_url">服务器地址（如 http://192.168.1.100:9527）</string>
     <string name="hint_username">用户名（可选，用于 /用户名 路径模式）</string>
-    <string name="hint_password">密码（可选）</string>
-    <string name="use_builtin">使用内置前端（离线加载本地播放器，接口仍连服务器）</string>
+    <string name="hint_password">密码（可选，用于自动登录控制台/播放器）</string>
 
     <string name="saved">已保存，正在重新连接…</string>
     <string name="testing">正在测试连接…</string>
@@ -23,5 +22,5 @@
 
     <string name="download_started">已开始下载</string>
 
-    <string name="settings_help">默认连接你自行部署的 lxserver（Web 端口默认 9527）。\n\n• 关闭“内置前端”：App 直接用浏览器内核加载你填的服务器地址，功能最完整（含 WebSocket 同步）。\n• 开启“内置前端”：App 加载本地打包的播放器页面，并通过接口代理连接服务器，适合服务器前端偶尔不可达的场景；WebSocket 同步在内置模式下可能不可用。\n\n账号/密码用于 HTTP 基础鉴权与表单登录参考；lxserver 的 Web 播放器登录仍在其自身页面内完成。</string>
+    <string name="settings_help">连接你自行部署的 lxserver（Web 端口默认 9527）。\n\nApp 使用系统浏览器内核直接加载你填的服务器地址，功能最完整（含 WebSocket 同步）。\n\n密码会用于：① 服务器 HTTP 基础鉴权；② 登录 lxserver 控制台时自动填充管理员密码并自动登录，无需每次手动输入。</string>
 </resources>

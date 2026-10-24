@@ -28,7 +28,6 @@ class SettingsActivity : AppCompatActivity() {
             binding.etServerUrl.setText(prefs.serverUrl)
             binding.etUsername.setText(prefs.username)
             binding.etPassword.setText(prefs.password)
-            binding.switchBuiltin.isChecked = prefs.useBuiltin
 
             binding.btnSave.setOnClickListener { save() }
             binding.btnTest.setOnClickListener { testConnection() }
@@ -64,7 +63,6 @@ class SettingsActivity : AppCompatActivity() {
         prefs.serverUrl = url
         prefs.username = binding.etUsername.text.toString()
         prefs.password = binding.etPassword.text.toString()
-        prefs.useBuiltin = binding.switchBuiltin.isChecked
         prefs.firstRun = false
         Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show()
 

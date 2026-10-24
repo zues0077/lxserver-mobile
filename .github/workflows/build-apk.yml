@@ -41,12 +41,9 @@ jobs:
           fi
           echo "ANDROID_HOME is $ANDROID_HOME"
 
-      # Built-in frontend is OPTIONAL. It is bundled from lxserver's main branch at
-      # build time so the app can run fully offline. If the fetch fails (e.g. no
-      # network), the app still works in remote mode, so we only warn.
-      - name: Fetch bundled frontend (built-in mode, optional)
-        run: bash scripts/fetch-frontend.sh "main" || echo "::warning::Bundled frontend fetch failed; built-in mode will be unavailable (remote mode is unaffected)."
-
+      # NOTE: the built-in (bundled) frontend was removed — it was unreliable and
+      # is no longer part of the app. The client now always loads the user's own
+      # server URL directly in the system WebView.
       - name: Decode signing keystore
         if: ${{ env.HAS_SIGNING == 'true' }}
         run: |

@@ -17,6 +17,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: AppPreferences
     private lateinit var webView: WebView
+    private var loadedUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,7 +30,7 @@ class MainActivity : AppCompatActivity() {
             webView = binding.webview
 
             setupWebView()
-            loadInitial()
+            maybeOpenSettings()
         } catch (t: Throwable) {
             showStartupCrash(t)
         }
@@ -71,10 +72,8 @@ class MainActivity : AppCompatActivity() {
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
         webView.webViewClient = LxWebViewClient(
-            serverBase = normalizeBase(prefs.serverUrl),
-            useBuiltin = prefs.useBuiltin,
-            username = prefs.username,
-            password = prefs.password
+            usernameProvider = { prefs.username },
+            passwordProvider = { prefs.password }
         ) { message -> showError(message) }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -90,19 +89,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadInitial() {
-        hideError()
-        when {
-            prefs.useBuiltin -> {
-                webView.loadUrl("file:///android_asset/webplayer/index.html")
-            }
-            prefs.serverUrl.isEmpty() -> {
-                // Nothing configured yet: send the user to Settings.
-                openSettings()
-            }
-            else -> {
-                webView.loadUrl(normalizeBase(prefs.serverUrl))
-            }
+    /**
+     * Load (or reload) whenever the configured URL differs from what is currently
+     * shown. Doing it in onResume fixes two issues at once:
+     *  - coming back from the Settings screen never reloaded the new URL (blank page);
+     *  - loadUrl() in onCreate could paint blank until a manual refresh.
+     */
+    override fun onResume() {
+        super.onResume()
+        if (!::webView.isInitialized) return
+        val url = normalizeBase(prefs.serverUrl)
+        if (url.isNotEmpty() && url != loadedUrl) {
+            loadedUrl = url
+            hideError()
+            // post() defers until after the first layout pass.
+            webView.post { webView.loadUrl(url) }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // lxserver keeps its login in a cookie; flush it so the session survives
+        // an app restart instead of prompting for the password again.
+        CookieManager.getInstance().flush()
+    }
+
+    private fun maybeOpenSettings() {
+        // On startup only: nothing configured yet -> send the user to Settings.
+        if (normalizeBase(prefs.serverUrl).isEmpty()) {
+            openSettings()
         }
     }
 

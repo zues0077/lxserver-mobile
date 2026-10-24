@@ -24,12 +24,6 @@ class AppPreferences(context: Context) {
         get() = prefs.getString(KEY_PASSWORD, "") ?: ""
         set(value) = prefs.edit().putString(KEY_PASSWORD, value).apply()
 
-    /** When true the app loads the bundled frontend from assets and proxies API
-     *  calls to [serverUrl]; when false it loads [serverUrl] directly. */
-    var useBuiltin: Boolean
-        get() = prefs.getBoolean(KEY_USE_BUILTIN, false)
-        set(value) = prefs.edit().putBoolean(KEY_USE_BUILTIN, value).apply()
-
     var firstRun: Boolean
         get() = prefs.getBoolean(KEY_FIRST_RUN, true)
         set(value) = prefs.edit().putBoolean(KEY_FIRST_RUN, value).apply()
@@ -41,7 +35,6 @@ class AppPreferences(context: Context) {
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_USERNAME = "username"
         private const val KEY_PASSWORD = "password"
-        private const val KEY_USE_BUILTIN = "use_builtin"
         private const val KEY_FIRST_RUN = "first_run"
     }
 }

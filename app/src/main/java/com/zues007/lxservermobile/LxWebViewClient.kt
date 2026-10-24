@@ -1,45 +1,30 @@
 package com.zues007.lxservermobile
 
 import android.os.Build
-import android.util.Base64
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import java.io.ByteArrayInputStream
-import java.io.IOException
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.Locale
 
 /**
- * WebViewClient for the lxserver client.
- *
- * - In remote mode it simply loads the user's server URL.
- * - In built-in mode the page is served from `file:///android_asset/webplayer/`.
- *   The web player uses relative API paths (`/api/...`, `/rest`, ...) which would
- *   otherwise resolve to the file:// origin and fail. This client intercepts those
- *   requests and proxies them to the real server ([serverBase]) so the bundled UI
- *   works fully offline-bundled while talking to the user's backend.
- * - Supplies HTTP Basic credentials when the server asks for them.
+ * Minimal WebViewClient for loading the user's own lxserver web UI:
+ *  - keeps every navigation inside the WebView;
+ *  - answers HTTP Basic auth challenges with the stored credentials;
+ *  - auto-fills the lxserver admin login form (if one is shown) so the user does
+ *    not have to type the password on every launch;
+ *  - surfaces main-frame load errors.
  */
 class LxWebViewClient(
-    private val serverBase: String,
-    private val useBuiltin: Boolean,
-    private val username: String,
-    private val password: String,
+    private val usernameProvider: () -> String,
+    private val passwordProvider: () -> String,
     private val onMainFrameError: (String) -> Unit
 ) : WebViewClient() {
 
-    // Paths that must be forwarded to the real lxserver backend.
-    private val apiPrefixes = listOf(
-        "/api/", "/rest", "/webdav", "/health",
-        "/socket.io", "/sync", "/subsonic", "/auth"
-    )
-
-    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+    override fun shouldOverrideUrlLoading(
+        view: WebView?,
+        request: WebResourceRequest?
+    ): Boolean {
         // Keep all navigation inside the WebView.
         return false
     }
@@ -50,94 +35,49 @@ class LxWebViewClient(
         host: String?,
         realm: String?
     ) {
-        if (username.isNotEmpty() && password.isNotEmpty()) {
-            handler?.proceed(username, password)
+        val user = usernameProvider()
+        val pwd = passwordProvider()
+        if (user.isNotEmpty() && pwd.isNotEmpty()) {
+            handler?.proceed(user, pwd)
         } else {
             handler?.cancel()
         }
     }
 
-    override fun shouldInterceptRequest(
-        view: WebView?,
-        request: WebResourceRequest?
-    ): WebResourceResponse? {
-        if (!useBuiltin || request == null) return null
-        val url = request.url
-        if (url.scheme == "file") {
-            val path = url.path ?: return null
-            if (apiPrefixes.any { path.startsWith(it) }) {
-                return proxyToServer(request, path)
-            }
-        }
-        return null
+    /**
+     * Auto-login: lxserver's console login form (see public/index.html) is
+     *   <input id="access-password"> + <button id="login-btn">
+     * When it is visible and empty but we have a stored password, fill it and
+     * submit. Only acts when the form is actually shown, so it never interferes
+     * with the normal player UI or an already-logged-in session.
+     */
+    override fun onPageFinished(view: WebView?, url: String?) {
+        super.onPageFinished(view, url)
+        val pwd = passwordProvider()
+        if (view == null || pwd.isEmpty()) return
+        view.evaluateJavascript(autoLoginScript(pwd), null)
     }
 
-    private fun proxyToServer(request: WebResourceRequest, path: String): WebResourceResponse? {
-        return try {
-            val target = StringBuilder(serverBase).append(path)
-            val query = request.url.query
-            if (!query.isNullOrEmpty()) target.append("?").append(query)
-
-            val conn = URL(target.toString()).openConnection() as HttpURLConnection
-            conn.requestMethod = request.method
-            conn.connectTimeout = 15000
-            conn.readTimeout = 30000
-            conn.instanceFollowRedirects = false
-
-            request.requestHeaders?.forEach { (key, value) ->
-                if (key.equals("Host", ignoreCase = true)) return@forEach
-                try {
-                    conn.setRequestProperty(key, value)
-                } catch (_: Exception) {
-                    // ignore unsupported header
-                }
-            }
-
-            if (username.isNotEmpty() && password.isNotEmpty()) {
-                val auth = "$username:$password"
-                val encoded = Base64.encodeToString(
-                    auth.toByteArray(Charsets.UTF_8),
-                    Base64.NO_WRAP
-                )
-                conn.setRequestProperty("Authorization", "Basic $encoded")
-            }
-
-            val method = request.method.uppercase(Locale.ROOT)
-            if (method == "POST" || method == "PUT") {
-                // NOTE: WebResourceRequest does not expose the request body, so a
-                // POST/PUT payload cannot be forwarded from the bundled UI. Keep
-                // doOutput so the backend still receives a well-formed POST/PUT.
-                conn.doOutput = true
-            }
-
-            conn.connect()
-
-            val status = conn.responseCode
-            val mime = conn.contentType ?: "application/octet-stream"
-            val encoding = conn.contentEncoding ?: "UTF-8"
-            val stream: InputStream = if (status in 200..299) {
-                conn.inputStream
-            } else {
-                conn.errorStream ?: conn.inputStream
-            }
-            val headers = mutableMapOf<String, String>()
-            conn.headerFields?.forEach { (key, values) ->
-                if (key != null && !values.isNullOrEmpty()) {
-                    headers[key] = values.joinToString(",")
-                }
-            }
-            WebResourceResponse(mime, encoding, status, conn.responseMessage ?: "", headers, stream)
-        } catch (e: IOException) {
-            WebResourceResponse(
-                "text/plain", "UTF-8", 502, "Bad Gateway", emptyMap(),
-                ByteArrayInputStream(("proxy error: " + (e.message ?: "io")).toByteArray())
-            )
-        } catch (e: Exception) {
-            WebResourceResponse(
-                "text/plain", "UTF-8", 500, "Error", emptyMap(),
-                ByteArrayInputStream((e.message ?: "error").toByteArray())
-            )
-        }
+    private fun autoLoginScript(pwd: String): String {
+        val escaped = pwd
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "\\n")
+            .replace("\r", "")
+        return """
+            (function(){
+              try {
+                var p = document.getElementById('access-password');
+                var b = document.getElementById('login-btn');
+                if (!p || !b) return;                    // not the login screen
+                if (p.offsetParent === null) return;     // form hidden -> already logged in
+                if (p.value && p.value.length) return;   // already filled
+                p.value = '$escaped';
+                p.dispatchEvent(new Event('input', {bubbles:true}));
+                setTimeout(function(){ try { b.click(); } catch(e){} }, 250);
+              } catch(e) {}
+            })();
+        """.trimIndent()
     }
 
     override fun onReceivedError(
