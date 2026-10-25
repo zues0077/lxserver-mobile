@@ -27,7 +27,9 @@ class SettingsActivity : AppCompatActivity() {
             prefs = AppPreferences(this)
             binding.etServerUrl.setText(prefs.serverUrl)
             binding.etUsername.setText(prefs.username)
-            binding.etPassword.setText(prefs.password)
+            binding.etUserPassword.setText(prefs.userPassword)
+            binding.etAdminPassword.setText(prefs.adminPassword)
+            binding.etPlayerPassword.setText(prefs.playerPassword)
 
             binding.btnSave.setOnClickListener { save() }
             binding.btnTest.setOnClickListener { testConnection() }
@@ -62,7 +64,9 @@ class SettingsActivity : AppCompatActivity() {
         val url = normalize(binding.etServerUrl.text.toString())
         prefs.serverUrl = url
         prefs.username = binding.etUsername.text.toString()
-        prefs.password = binding.etPassword.text.toString()
+        prefs.userPassword = binding.etUserPassword.text.toString()
+        prefs.adminPassword = binding.etAdminPassword.text.toString()
+        prefs.playerPassword = binding.etPlayerPassword.text.toString()
         prefs.firstRun = false
         Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show()
 

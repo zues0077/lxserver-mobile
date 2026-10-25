@@ -8,8 +8,10 @@
     <string name="action_save">保存</string>
 
     <string name="hint_server_url">服务器地址（如 http://192.168.1.100:9527）</string>
-    <string name="hint_username">用户名（可选，用于 /用户名 路径模式）</string>
-    <string name="hint_password">密码（可选，用于自动登录控制台/播放器）</string>
+    <string name="hint_username">登录用户名（可选，lxserver 的登录用户）</string>
+    <string name="hint_user_password">用户密码（可选，配合上面的「登录用户名」）</string>
+    <string name="hint_admin_password">管理员密码（可选，lxserver 后台设置 →「管理员密码」）</string>
+    <string name="hint_player_password">播放器访问密码（可选，lxserver 后台设置 →「Web 播放器访问密码」）</string>
 
     <string name="saved">已保存，正在重新连接…</string>
     <string name="testing">正在测试连接…</string>
@@ -22,5 +24,5 @@
 
     <string name="download_started">已开始下载</string>
 
-    <string name="settings_help">连接你自行部署的 lxserver（Web 端口默认 9527）。\n\nApp 使用系统浏览器内核直接加载你填的服务器地址，功能最完整（含 WebSocket 同步）。\n\n密码会用于：① 服务器 HTTP 基础鉴权；② 登录 lxserver 控制台时自动填充管理员密码并自动登录，无需每次手动输入。</string>
+    <string name="settings_help">连接你自行部署的 lxserver（Web 端口默认 9527）。App 用系统浏览器内核直接加载该地址，功能最完整（含 WebSocket 同步）。\n\n⚠️ 这三套密码在 lxserver 里是各自独立的，不要混填：\n• 用户密码 —— 普通登录用户，需配合「登录用户名」一起填。\n• 管理员密码 —— 后台设置里的「管理员密码」，用于自动登录控制台和播放器管理员。\n• 播放器访问密码 —— 后台设置里的「Web 播放器访问密码」，仅在后台开启「启用 Web 播放器密码」后才需要。\n\n填好后，遇到对应登录页会自动填充并登录；留空则该项不自动处理，页面照常手动输入即可。</string>
 </resources>

@@ -11,8 +11,8 @@ android {
         applicationId = "com.zues007.lxservermobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
     }
 
     // Produce per-ABI APKs plus a universal APK so the Release mirrors the

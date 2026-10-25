@@ -64,6 +64,19 @@ class MainActivity : AppCompatActivity() {
         settings.mediaPlaybackRequiresUserGesture = false
         // NOTE: setAppCacheEnabled() was removed from the SDK (AppCache is dead);
         // calling it fails to compile against compileSdk 34.
+        // --- phone-friendliness ---
+        // pinch-to-zoom (no on-screen zoom buttons taking up space)
+        settings.setSupportZoom(true)
+        settings.builtInZoomControls = true
+        settings.displayZoomControls = false
+        settings.loadsImagesAutomatically = true
+        settings.setNeedInitialFocus(false)
+        // Parts of the player open links in a new window (rankings, playlists…).
+        // Without this the click silently does nothing; onCreateWindow() below
+        // routes those back into this single WebView.
+        settings.javaScriptCanOpenWindowsAutomatically = true
+        settings.setSupportMultipleWindows(true)
+
         settings.userAgentString =
             "${WebSettings.getDefaultUserAgent(this)} LXServerMobile/${BuildConfig.VERSION_NAME}"
 
@@ -72,8 +85,7 @@ class MainActivity : AppCompatActivity() {
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
         webView.webViewClient = LxWebViewClient(
-            usernameProvider = { prefs.username },
-            passwordProvider = { prefs.password }
+            credentials = { prefs.credentials() }
         ) { message -> showError(message) }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -81,6 +93,21 @@ class MainActivity : AppCompatActivity() {
                 binding.progressbar.visibility =
                     if (newProgress in 1..99) View.VISIBLE else View.GONE
                 binding.progressbar.progress = newProgress
+            }
+
+            // Reuse this WebView for windows the page tries to open, otherwise a
+            // new-window click would just do nothing on a single-WebView shell.
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                if (view == null || resultMsg == null) return false
+                val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+                transport.webView = view
+                resultMsg.sendToTarget()
+                return true
             }
         }
 

@@ -8,16 +8,15 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 
 /**
- * Minimal WebViewClient for loading the user's own lxserver web UI:
+ * WebViewClient for loading the user's own lxserver web UI:
  *  - keeps every navigation inside the WebView;
  *  - answers HTTP Basic auth challenges with the stored credentials;
- *  - auto-fills the lxserver admin login form (if one is shown) so the user does
- *    not have to type the password on every launch;
+ *  - auto-logins whenever a known login screen is displayed, using the matching
+ *    password (admin / player / ordinary user are three separate things);
  *  - surfaces main-frame load errors.
  */
 class LxWebViewClient(
-    private val usernameProvider: () -> String,
-    private val passwordProvider: () -> String,
+    private val credentials: () -> Credentials,
     private val onMainFrameError: (String) -> Unit
 ) : WebViewClient() {
 
@@ -35,8 +34,9 @@ class LxWebViewClient(
         host: String?,
         realm: String?
     ) {
-        val user = usernameProvider()
-        val pwd = passwordProvider()
+        val c = credentials()
+        val user = c.username
+        val pwd = c.userPassword.ifEmpty { c.adminPassword }
         if (user.isNotEmpty() && pwd.isNotEmpty()) {
             handler?.proceed(user, pwd)
         } else {
@@ -45,37 +45,80 @@ class LxWebViewClient(
     }
 
     /**
-     * Auto-login: lxserver's console login form (see public/index.html) is
-     *   <input id="access-password"> + <button id="login-btn">
-     * When it is visible and empty but we have a stored password, fill it and
-     * submit. Only acts when the form is actually shown, so it never interferes
-     * with the normal player UI or an already-logged-in session.
+     * Auto-login. Two possible login screens exist:
+     *  1) admin console  (public/index.html)
+     *       #access-password  +  #login-btn
+     *  2) music player   (public/music/login.html) — two tabs:
+     *       user mode    : #auth-username-input + #auth-user-password-input
+     *       player mode  : #auth-player-password-input   (tab: #btn-tab-player)
+     *       both submit via #submit-btn
+     * Only acts when the relevant form is actually visible, so it never touches
+     * the player UI nor an already-logged-in session.
      */
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
-        val pwd = passwordProvider()
-        if (view == null || pwd.isEmpty()) return
-        view.evaluateJavascript(autoLoginScript(pwd), null)
+        val c = credentials()
+        if (view == null) return
+        if (c.adminPassword.isEmpty() && c.playerPassword.isEmpty() && c.userPassword.isEmpty()) return
+        view.evaluateJavascript(autoLoginScript(c), null)
     }
 
-    private fun autoLoginScript(pwd: String): String {
-        val escaped = pwd
-            .replace("\\", "\\\\")
-            .replace("'", "\\'")
-            .replace("\n", "\\n")
-            .replace("\r", "")
+    private fun esc(s: String) = s
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("\r", "")
+
+    private fun autoLoginScript(c: Credentials): String {
+        val admin = esc(c.adminPassword)
+        val user = esc(c.username)
+        val userPwd = esc(c.userPassword)
+        val playerPwd = esc(c.playerPassword)
         return """
             (function(){
               try {
-                var p = document.getElementById('access-password');
-                var b = document.getElementById('login-btn');
-                if (!p || !b) return;                    // not the login screen
-                if (p.offsetParent === null) return;     // form hidden -> already logged in
-                if (p.value && p.value.length) return;   // already filled
-                p.value = '$escaped';
-                p.dispatchEvent(new Event('input', {bubbles:true}));
-                setTimeout(function(){ try { b.click(); } catch(e){} }, 250);
-              } catch(e) {}
+                // 1) admin console
+                var ap = document.getElementById('access-password');
+                var ab = document.getElementById('login-btn');
+                if (ap && ab && ap.offsetParent !== null && !ap.value && '$admin') {
+                  ap.value = '$admin';
+                  ap.dispatchEvent(new Event('input', {bubbles:true}));
+                  setTimeout(function(){ try { ab.click(); } catch(e){} }, 250);
+                  return;
+                }
+                // 2) music player login
+                var sb = document.getElementById('submit-btn');
+                if (!sb) return;
+                var un = document.getElementById('auth-username-input');
+                var up = document.getElementById('auth-user-password-input');
+                var pp = document.getElementById('auth-player-password-input');
+                function setVal(el, v){ el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); }
+                function clickSubmit(){ setTimeout(function(){ try { sb.click(); } catch(e){} }, 300); }
+                if (up && up.offsetParent !== null) {
+                  if ('$user' && '$userPwd') {
+                    if (un && !un.value) setVal(un, '$user');
+                    if (!up.value) setVal(up, '$userPwd');
+                    clickSubmit();
+                    return;
+                  }
+                  if ('$playerPwd') {
+                    var tp = document.getElementById('btn-tab-player');
+                    if (tp) {
+                      tp.click();
+                      setTimeout(function(){
+                        if (pp && !pp.value) setVal(pp, '$playerPwd');
+                        clickSubmit();
+                      }, 350);
+                    }
+                    return;
+                  }
+                  return;
+                }
+                if (pp && pp.offsetParent !== null && '$playerPwd') {
+                  if (!pp.value) setVal(pp, '$playerPwd');
+                  clickSubmit();
+                }
+              } catch(e){}
             })();
         """.trimIndent()
     }
