@@ -11,25 +11,29 @@ android {
         applicationId = "com.zues007.lxservermobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.0.4"
+        // 100000 (not 6): earlier releases published per-ABI APKs whose versionCodes
+        // were derived from the base code with an offset, so a plain sequential bump
+        // could look like a DOWNGRADE against an installed split APK and be refused.
+        // Starting high guarantees every future version upgrades cleanly.
+        versionCode = 100000
+        versionName = "1.0.5"
     }
 
-    // Produce per-ABI APKs plus a universal APK so the Release mirrors the
-    // multi-variant layout used by other LX clients.
-    // NOTE: this app ships NO native libraries, so every variant is effectively
-    // identical bytecode — the "universal" APK is the one to install on any
-    // device. ABI is therefore NOT the cause of any startup crash.
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-            isUniversalApk = true
-        }
-    }
-
+    // NOTE: ABI splits were removed on purpose. This app ships NO native libraries,
+    // so every per-ABI APK was byte-identical anyway, and splits gave them different
+    // versionCodes — mixing variants made installs fail as a "version downgrade".
+    // A single APK is universally installable and always upgrades.
     signingConfigs {
+        // Stable debug key committed at app/debug.keystore. WITHOUT this, every CI
+        // run generates a fresh random debug key, so each new APK would have a
+        // different signature and Android refuses to update the installed app
+        // (user has to uninstall first). Debug keys are not secret.
+        create("ciDebug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         create("release") {
             // Values are injected from environment variables by CI.
             // If any is missing the release build falls back to debug signing.
@@ -55,6 +59,9 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            // Sign with the FIXED keystore so consecutive builds are signature-compatible
+            // and can overwrite the installed app instead of requiring an uninstall.
+            signingConfig = signingConfigs["ciDebug"]
         }
     }
 

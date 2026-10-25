@@ -44,6 +44,26 @@ jobs:
       # NOTE: the built-in (bundled) frontend was removed — it was unreliable and
       # is no longer part of the app. The client now always loads the user's own
       # server URL directly in the system WebView.
+      # A debug build is normally signed with a randomly generated key, which differs
+      # on every CI run — Android then refuses to update the installed app and the
+      # user must uninstall first. Keep a FIXED debug keystore (committed at
+      # app/debug.keystore) so consecutive builds stay signature-compatible.
+      - name: Ensure stable debug keystore
+        run: |
+          KEY="app/debug.keystore"
+          if [ -f "$KEY" ]; then
+            echo "Using the committed debug keystore (stable signature)."
+          else
+            echo "No committed keystore yet - generating one (committed afterwards)."
+            keytool -genkeypair -v \
+              -keystore "$KEY" \
+              -storetype JKS \
+              -storepass android -keypass android \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Decode signing keystore
         if: ${{ env.HAS_SIGNING == 'true' }}
         run: |
@@ -75,6 +95,15 @@ jobs:
           path: app/build/outputs/apk
           if-no-files-found: error
 
+      # Only needed once: lets us commit the generated keystore so later runs reuse
+      # the same signature. Harmless (and a no-op) once app/debug.keystore is committed.
+      - name: Upload debug keystore
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-keystore
+          path: app/debug.keystore
+          if-no-files-found: warn
+
       # Publish a GitHub Release with the APK attached. Done via the REST API
       # (not a third-party action) so it works reliably in any environment.
       - name: Publish Release (tag builds only)
@@ -100,9 +129,13 @@ jobs:
             "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$REL_ID/assets")
           for APK in "${APKS[@]}"; do
             BASE=$(basename "$APK")
-            SUFFIX=$(echo "$BASE" | sed -E 's/^app-(.*)-(debug|release)\.apk$/\1/')
-            [ "$SUFFIX" = "$BASE" ] && SUFFIX="apk"
-            NAME="lxserver-mobile-${VER}-${SUFFIX}.apk"
+            # app-<abi>-debug.apk -> keep the <abi>; plain app-debug.apk -> no suffix
+            ABI=$(echo "$BASE" | sed -nE 's/^app-(.*)-(debug|release)\.apk$/\1/p')
+            if [ -z "$ABI" ]; then
+              NAME="lxserver-mobile-${VER}.apk"
+            else
+              NAME="lxserver-mobile-${VER}-${ABI}.apk"
+            fi
             echo "==> $APK -> $NAME"
             EXISTING=$(echo "$ASSETS_JSON" | jq -r ".[] | select(.name==\"$NAME\") | .id")
             if [ -n "$EXISTING" ]; then
