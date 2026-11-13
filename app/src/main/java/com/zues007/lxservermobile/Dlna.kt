@@ -160,7 +160,7 @@ object DlnaDiscovery {
                         }
                     }
                 }
-                event = parser.nextEvent()
+                event = parser.next()
             }
         } catch (t: Throwable) {
             Log.w(TAG, "解析设备描述失败: ${t.message}")
