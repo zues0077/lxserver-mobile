@@ -91,6 +91,9 @@ object CastStream {
             put("artist", artist)
             put("durationMs", durationMs)
             put("contentType", contentType)
+            // 让服务端按「手机正在用的地址」签发：设备必须能访问这个地址。
+            // 不带的话服务端会用 config.serverBaseUrl（可能是另一个端口/域名）。
+            put("baseUrl", serverOrigin)
             if (format != null) put("format", format)
         }.toString()
         var conn: HttpURLConnection? = null
