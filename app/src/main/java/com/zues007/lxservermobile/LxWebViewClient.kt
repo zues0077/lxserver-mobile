@@ -1,6 +1,7 @@
 package com.zues007.lxservermobile
 
 import android.os.Build
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -13,11 +14,14 @@ import android.webkit.WebViewClient
  *  - answers HTTP Basic auth challenges with the stored credentials;
  *  - auto-logins whenever a known login screen is displayed, using the matching
  *    password (admin / player / ordinary user are three separate things);
- *  - surfaces main-frame load errors.
+ *  - reports the playback state of the page's <audio> element to the native side
+ *    so a foreground service can keep the process alive;
+ *  - surfaces main-frame load errors and WebView renderer deaths.
  */
 class LxWebViewClient(
     private val credentials: () -> Credentials,
-    private val onMainFrameError: (String) -> Unit
+    private val onMainFrameError: (String) -> Unit,
+    private val onRendererGone: (RenderProcessGoneDetail?) -> Boolean = { false }
 ) : WebViewClient() {
 
     override fun shouldOverrideUrlLoading(
@@ -26,6 +30,17 @@ class LxWebViewClient(
     ): Boolean {
         // Keep all navigation inside the WebView.
         return false
+    }
+
+    /**
+     * Renderer process termination. Returning false (the default) makes WebView
+     * kill the whole app process; the Activity owns the actual recovery.
+     */
+    override fun onRenderProcessGone(
+        view: WebView?,
+        detail: RenderProcessGoneDetail?
+    ): Boolean {
+        return onRendererGone(detail)
     }
 
     override fun onReceivedHttpAuthRequest(
@@ -57,11 +72,62 @@ class LxWebViewClient(
      */
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
-        val c = credentials()
         if (view == null) return
+
+        // Playback watcher first: it must survive even when no passwords are set.
+        view.evaluateJavascript(playbackWatcherScript(), null)
+
+        val c = credentials()
         if (c.adminPassword.isEmpty() && c.playerPassword.isEmpty() && c.userPassword.isEmpty()) return
         view.evaluateJavascript(autoLoginScript(c), null)
     }
+
+    /**
+     * 监听页面里 <audio> 的播放状态并回调原生（window.LXNative.setPlayback）。
+     *
+     * 要点：
+     *  - 媒体事件（play/pause/ended）不冒泡，必须用捕获阶段监听 document；
+     *  - 页面的 audio 元素播放中可能被整体重建，所以再加 5 秒心跳兜底；
+     *  - 歌名/歌手优先取 navigator.mediaSession.metadata（lxserver 前端已维护），
+     *    取不到再退回播放条上的 #player-title / #player-artist；
+     *  - 状态没变化就不重复回调，避免服务被反复唤醒。
+     */
+    private fun playbackWatcherScript(): String = """
+        (function(){
+          try {
+            if (window.__lxNativeWatcher) return;
+            window.__lxNativeWatcher = true;
+            var last = null;
+            function meta() {
+              var t = '', a = '';
+              try {
+                var m = navigator.mediaSession && navigator.mediaSession.metadata;
+                if (m) { t = m.title || ''; a = m.artist || ''; }
+              } catch (e) {}
+              if (!t) { var e1 = document.getElementById('player-title'); if (e1) t = (e1.textContent || '').trim(); }
+              if (!a) { var e2 = document.getElementById('player-artist'); if (e2) a = (e2.textContent || '').trim(); }
+              return [t, a];
+            }
+            function send(playing) {
+              var m = meta();
+              var key = (playing ? '1' : '0') + '|' + m[0] + '|' + m[1];
+              if (key === last) return;
+              last = key;
+              try { if (window.LXNative) window.LXNative.setPlayback(!!playing, m[0], m[1]); } catch (e) {}
+            }
+            function isAudio(el) { return !!el && el.tagName === 'AUDIO'; }
+            document.addEventListener('play', function(e){ if (isAudio(e.target)) send(true); }, true);
+            document.addEventListener('playing', function(e){ if (isAudio(e.target)) send(true); }, true);
+            document.addEventListener('pause', function(e){ if (isAudio(e.target)) send(false); }, true);
+            document.addEventListener('ended', function(e){ if (isAudio(e.target)) send(false); }, true);
+            setInterval(function(){
+              var a = document.getElementById('audio-player') || document.querySelector('audio');
+              if (!a) return;
+              send(!a.paused && !a.ended);
+            }, 5000);
+          } catch (e) {}
+        })();
+    """.trimIndent()
 
     private fun esc(s: String) = s
         .replace("\\", "\\\\")

@@ -4,6 +4,15 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 息屏/切后台继续播放：前台服务把进程钉在「正在播放媒体」档，
+         配合 PARTIAL_WAKE_LOCK + WifiLock 防止息屏后 CPU 休眠、Wi-Fi 省电断流。 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Android 13+ 通知栏播放控制需要运行时授权（不给也能播，只是没有通知）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 引导用户把本 App 加入电池优化白名单（realme / OPPO / 小米 后台策略很激进）。 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".LxApp"
@@ -11,6 +20,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
+        android:largeHeap="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.LXServerMobile"
         android:usesCleartextTraffic="true"
@@ -33,6 +43,11 @@
             android:exported="false"
             android:label="@string/title_settings"
             android:parentActivityName=".MainActivity" />
+
+        <service
+            android:name=".PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
     </application>
 

@@ -45,6 +45,14 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_FIRST_RUN, true)
         set(value) = prefs.edit().putBoolean(KEY_FIRST_RUN, value).apply()
 
+    /**
+     * 允许 chrome://inspect 远程调试这个 App 的 WebView。
+     * 排查「页面为什么被杀 / 哪个 JS 报错」时必开；平时关掉更安全。
+     */
+    var webViewDebug: Boolean
+        get() = prefs.getBoolean(KEY_WEBVIEW_DEBUG, false)
+        set(value) = prefs.edit().putBoolean(KEY_WEBVIEW_DEBUG, value).apply()
+
     /** Snapshot handed to the WebViewClient for auto-login. */
     fun credentials() = Credentials(
         username = username,
@@ -63,6 +71,7 @@ class AppPreferences(context: Context) {
         private const val KEY_USER_PASSWORD = "user_password"
         private const val KEY_PLAYER_PASSWORD = "player_password"
         private const val KEY_FIRST_RUN = "first_run"
+        private const val KEY_WEBVIEW_DEBUG = "webview_debug"
     }
 }
 

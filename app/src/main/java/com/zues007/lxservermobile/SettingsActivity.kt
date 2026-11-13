@@ -1,9 +1,15 @@
 package com.zues007.lxservermobile
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
+import android.webkit.WebView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.zues007.lxservermobile.databinding.ActivitySettingsBinding
@@ -33,9 +39,29 @@ class SettingsActivity : AppCompatActivity() {
 
             binding.btnSave.setOnClickListener { save() }
             binding.btnTest.setOnClickListener { testConnection() }
+            binding.btnBattery.setOnClickListener { requestIgnoreBatteryOptimizations() }
+
+            binding.cbWebviewDebug.isChecked = prefs.webViewDebug
+            binding.cbWebviewDebug.setOnCheckedChangeListener { _, checked ->
+                prefs.webViewDebug = checked
+                // 立即生效；已经打开的 WebView 建议下拉刷新一次页面再观察。
+                WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG || checked)
+            }
+
+            showWebViewInfo()
+            binding.tvLogPath.text = getString(
+                R.string.settings_log_path,
+                CrashLogger.eventsLogPath(this)
+            )
         } catch (t: Throwable) {
             showStartupCrash(t)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 用户可能刚从系统电池设置页返回，回到前台时刷新一次状态。
+        if (::binding.isInitialized) updateBatteryStatus()
     }
 
     private fun showStartupCrash(t: Throwable) {
@@ -48,6 +74,58 @@ class SettingsActivity : AppCompatActivity() {
         }
         setContentView(android.widget.ScrollView(this).apply { addView(tv) })
     }
+
+    // -------------------------------------------------------------- 后台保活
+
+    private fun updateBatteryStatus() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            binding.tvBattery.text = ""
+            return
+        }
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val ignored = pm.isIgnoringBatteryOptimizations(packageName)
+        binding.tvBattery.text = getString(
+            if (ignored) R.string.battery_ignored else R.string.battery_not_ignored
+        )
+    }
+
+    /**
+     * 打开系统「忽略电池优化」确认框。国内 ROM 上这个 Intent 有可能被拦，
+     * 所以失败时退回到电池优化列表页，再不行就提示用户手动去设置。
+     */
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName")
+                )
+            )
+            Toast.makeText(this, R.string.action_battery_whitelist, Toast.LENGTH_SHORT).show()
+        } catch (t: Throwable) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (t2: Throwable) {
+                Toast.makeText(this, R.string.battery_not_ignored, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun showWebViewInfo() {
+        val pkg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WebView.getCurrentWebViewPackage()
+        } else {
+            null
+        }
+        binding.tvWebview.text = getString(
+            R.string.settings_webview_version,
+            pkg?.versionName ?: "未知",
+            pkg?.packageName ?: "-"
+        )
+    }
+
+    // ------------------------------------------------------------------ 连接
 
     private fun normalize(raw: String): String {
         var url = raw.trim()

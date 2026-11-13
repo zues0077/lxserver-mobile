@@ -11,14 +11,12 @@
         android:background="?attr/colorPrimary"
         android:elevation="4dp" />
 
+    <!-- WebView 改为代码创建：渲染进程被系统杀掉后，官方要求必须销毁旧实例并
+         换一个新的；写死在 XML 里的实例没法替换，App 就会被连带杀死。 -->
     <FrameLayout
+        android:id="@+id/web_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
-
-        <WebView
-            android:id="@+id/webview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
 
         <ProgressBar
             android:id="@+id/progressbar"

@@ -20,9 +20,35 @@
     <string name="test_error">连接失败：%1$s</string>
     <string name="test_empty">请先填写服务器地址</string>
 
-    <string name="error_load">无法加载页面：%1$s\n\n请确认：服务器地址正确且已启动（默认端口 9527）、手机与服务器在同一网络；或在“设置”中开启“使用内置前端”。</string>
+    <string name="error_load">无法加载页面：%1$s\n\n请确认：服务器地址正确且已启动（默认端口 9527）、手机与服务器在同一网络。</string>
 
     <string name="download_started">已开始下载</string>
+
+    <!-- 播放前台服务 / 通知 -->
+    <string name="notif_channel_name">播放控制</string>
+    <string name="notif_channel_desc">息屏或切到后台播放时常驻，防止系统回收进程</string>
+    <string name="notif_playing">正在播放</string>
+    <string name="notif_paused">已暂停</string>
+    <string name="notif_prev">上一首</string>
+    <string name="notif_pause">暂停</string>
+    <string name="notif_resume">继续</string>
+    <string name="notif_next">下一首</string>
+    <string name="notif_close">关闭</string>
+
+    <!-- WebView 渲染进程异常 -->
+    <string name="renderer_crashed_reloaded">页面渲染异常，已自动重新加载</string>
+    <string name="renderer_reclaimed_reloaded">系统回收了页面内存，已自动重新加载</string>
+
+    <!-- 后台保活 / 诊断 -->
+    <string name="settings_section_keepalive">后台保活（防止息屏/切后台被系统杀掉）</string>
+    <string name="settings_keepalive_desc">播放时 App 会挂一个「正在播放」前台通知来保住进程。realme / OPPO / 小米 等系统还会额外限制后台，建议把本 App 的电池策略设为「不受限制」，并在应用启动管理里允许自启动/后台运行。</string>
+    <string name="action_battery_whitelist">忽略电池优化（加入白名单）</string>
+    <string name="battery_ignored">电池优化：已忽略（白名单）</string>
+    <string name="battery_not_ignored">电池优化：未忽略，息屏后可能被系统冻结或回收</string>
+    <string name="settings_webview_version">WebView 内核：%1$s（%2$s）</string>
+    <string name="settings_debug_switch">允许 WebView 调试（chrome://inspect）</string>
+    <string name="settings_debug_desc">排查「页面被系统杀掉 / 播放中断」时开启；开完后用数据线连电脑，在 Chrome 打开 chrome://inspect 就能看到页面控制台和进程状态。</string>
+    <string name="settings_log_path">运行日志：%1$s</string>
 
     <string name="settings_help">连接你自行部署的 lxserver（Web 端口默认 9527）。App 用系统浏览器内核直接加载该地址，功能最完整（含 WebSocket 同步）。\n\n⚠️ 这三套密码在 lxserver 里是各自独立的，不要混填：\n• 用户密码 —— 普通登录用户，需配合「登录用户名」一起填。\n• 管理员密码 —— 后台设置里的「管理员密码」，用于自动登录控制台和播放器管理员。\n• 播放器访问密码 —— 后台设置里的「Web 播放器访问密码」，仅在后台开启「启用 Web 播放器密码」后才需要。\n\n填好后，遇到对应登录页会自动填充并登录；留空则该项不自动处理，页面照常手动输入即可。</string>
 </resources>

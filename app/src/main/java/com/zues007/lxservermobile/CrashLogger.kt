@@ -31,6 +31,37 @@ object CrashLogger {
         }
     }
 
+    /**
+     * 追加一条事件日志（不崩的异常也记）。
+     *
+     * 为什么需要它：WebView 渲染进程被系统杀掉、或者 App 被 LMK 直接 kill 时，
+     * 整个进程是被 native 层结束的，[install] 里的 uncaught handler **不会执行**。
+     * 所以「App 消失」这种问题光靠崩溃栈永远查不到，必须把关键节点（进程重建、
+     * 渲染进程死亡、前台服务启动失败）主动落到文件里。
+     *
+     * 文件位置：Android/data/<包名>/files/logs/events.log（超过 256KB 自动重来）。
+     */
+    fun logEvent(context: Context, event: String, detail: String = "") {
+        val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val line = "$ts [$event] $detail"
+        Log.i(TAG, line)
+        try {
+            val dir = context.getExternalFilesDir("logs") ?: File(context.filesDir, "logs")
+            dir.mkdirs()
+            val file = File(dir, "events.log")
+            if (file.length() > 256 * 1024) file.delete()
+            file.appendText(line + "\n")
+        } catch (_: Throwable) {
+            // 日志本身失败绝不能影响主流程
+        }
+    }
+
+    /** 事件日志路径，设置页展示用。 */
+    fun eventsLogPath(context: Context): String {
+        val dir = context.getExternalFilesDir("logs") ?: File(context.filesDir, "logs")
+        return File(dir, "events.log").absolutePath
+    }
+
     /** Saves [throwable] to a text file and returns a human-readable location. */
     fun save(context: Context, throwable: Throwable): String? {
         val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())

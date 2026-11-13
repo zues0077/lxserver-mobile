@@ -10,7 +10,10 @@ class LxApp : Application() {
         CrashLogger.install(this)
         // Lets you inspect the app's WebView from a desktop Chrome at
         // chrome://inspect (phone on USB, USB debugging on) — handy for
-        // diagnosing layout / console errors on the real device.
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+        // diagnosing layout / console errors and renderer deaths on a real device.
+        // Debug builds always allow it; release builds only when the user turns on
+        // 「允许 WebView 调试」in the settings screen.
+        val prefs = AppPreferences(this)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG || prefs.webViewDebug)
     }
 }
