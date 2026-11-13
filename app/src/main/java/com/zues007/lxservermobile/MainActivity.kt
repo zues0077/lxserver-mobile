@@ -15,6 +15,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -29,6 +30,11 @@ class MainActivity : AppCompatActivity() {
     private var webView: WebView? = null
     private var loadedUrl: String? = null
     private var recoveringRenderer = false
+
+    /** 最近一次播放信息：投放时要用它推流。 */
+    private var lastCastUrl: String = ""
+    private var lastTitle: String = ""
+    private var lastArtist: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,11 +128,16 @@ class MainActivity : AppCompatActivity() {
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(wv, true)
 
-        // 页面 -> 原生：播放状态 / 歌名
+        // 页面 -> 原生：播放状态 / 歌名 / 可投放地址 / 封面；以及每秒的进度。
         wv.addJavascriptInterface(
-            LxJsBridge { playing, title, artist, heartbeat ->
-                onPlaybackState(playing, title, artist, heartbeat)
-            },
+            LxJsBridge(
+                onPlayback = { playing, title, artist, heartbeat, castUrl, coverUrl ->
+                    onPlaybackState(playing, title, artist, heartbeat, castUrl, coverUrl)
+                },
+                onProgress = { positionMs, durationMs ->
+                    PlaybackService.updateLocalProgress(positionMs, durationMs)
+                }
+            ),
             JS_BRIDGE_NAME
         )
 
@@ -221,24 +232,49 @@ class MainActivity : AppCompatActivity() {
     // -------------------------------------------------------------- 播放状态
 
     /**
-     * 网页里的 <audio> 一旦真正开始播放，就拉起前台服务把进程钉住；
+     * 页面里的 <audio> 一旦真正开始播放，就拉起前台服务把进程钉住；
      * 暂停/播完则交给服务在宽限期后自行收掉。
      *
      * heartbeat=true 表示这条来自页面每 5 秒的状态巡检。用户刚在通知栏点过
      * 「关闭」的话，心跳不应该把服务重新拉起来（否则那个按钮等于没作用）；
      * 只有真实的 play 事件才允许恢复。
+     *
+     * 投放中：页面只要开始播（用户切歌/点播放），立刻把本机静音并把地址转给设备，
+     * 手机不发声。
      */
     private fun onPlaybackState(
         playing: Boolean,
         title: String,
         artist: String,
-        heartbeat: Boolean
+        heartbeat: Boolean,
+        castUrl: String,
+        coverUrl: String
     ) {
+        if (castUrl.isNotEmpty()) lastCastUrl = castUrl
+        if (title.isNotEmpty()) lastTitle = title
+        if (artist.isNotEmpty()) lastArtist = artist
+
+        if (CastController.isCasting) {
+            if (playing) {
+                pauseLocalPlayback()
+                CastController.pushTrack(castUrl, title, artist)
+            }
+            return
+        }
+
         if (playing) {
             if (heartbeat && PlaybackService.userDismissed) return
             PlaybackService.onPlaying(this, title, artist)
+            if (coverUrl.isNotEmpty()) PlaybackService.updateCover(coverUrl)
         } else {
             PlaybackService.onPaused(this)
+        }
+    }
+
+    private fun pauseLocalPlayback() {
+        try {
+            webView?.evaluateJavascript(PAUSE_LOCAL_JS, null)
+        } catch (_: Throwable) {
         }
     }
 
@@ -254,6 +290,99 @@ class MainActivity : AppCompatActivity() {
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                 REQUEST_NOTIFICATIONS
             )
+        }
+    }
+
+    // ----------------------------------------------------------------- 投放
+
+    private fun showCastDialog() {
+        if (CastController.isCasting) {
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.cast_title))
+                .setMessage(getString(R.string.cast_now_playing, CastController.deviceName()))
+                .setPositiveButton(getString(R.string.cast_stop)) { _, _ -> stopCasting() }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            return
+        }
+        if (lastCastUrl.isEmpty()) {
+            Toast.makeText(this, R.string.cast_need_play, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val searching = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.cast_title))
+            .setMessage(getString(R.string.cast_searching))
+            .setCancelable(true)
+            .create()
+        searching.show()
+
+        val context = this
+        Thread {
+            val devices = DlnaDiscovery.discover(context, 3500)
+            runOnUiThread {
+                try {
+                    searching.dismiss()
+                } catch (_: Throwable) {
+                }
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (devices.isEmpty()) {
+                    AlertDialog.Builder(context)
+                        .setTitle(getString(R.string.cast_title))
+                        .setMessage(getString(R.string.cast_none))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                } else {
+                    val names = ArrayList<String>()
+                    for (device in devices) names.add(device.displayName)
+                    AlertDialog.Builder(context)
+                        .setTitle(getString(R.string.cast_choose))
+                        .setItems(names.toTypedArray()) { _, index ->
+                            startCast(devices[index])
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                }
+            }
+        }.start()
+    }
+
+    private fun startCast(device: DlnaDevice) {
+        if (lastCastUrl.isEmpty()) {
+            Toast.makeText(this, R.string.cast_need_play, Toast.LENGTH_SHORT).show()
+            return
+        }
+        CastController.start(device, lastCastUrl, lastTitle, lastArtist) { ok, error ->
+            if (ok) {
+                pauseLocalPlayback()
+                Toast.makeText(
+                    this,
+                    getString(R.string.cast_started, device.friendlyName),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(
+                    this,
+                    getString(R.string.cast_failed, error),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun stopCasting() {
+        if (!CastController.isCasting) return
+        val context = this
+        CastController.stop { positionMs ->
+            val seconds = positionMs / 1000.0
+            val script = "(function(){try{var a=document.getElementById('audio-player')" +
+                "||document.querySelector('audio');if(a){a.currentTime=$seconds;a.play();}}" +
+                "catch(e){}})()"
+            try {
+                webView?.evaluateJavascript(script, null)
+            } catch (_: Throwable) {
+            }
+            Toast.makeText(context, R.string.cast_stopped, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -287,6 +416,7 @@ class MainActivity : AppCompatActivity() {
         WebViewBridge.detach()
         if (isFinishing) {
             // 用户真的退出 App：关掉前台服务和音频，避免留下幽灵通知。
+            if (CastController.isCasting) CastController.stop()
             PlaybackService.requestStop(this)
         }
         val wv = webView
@@ -363,6 +493,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         return when (item.itemId) {
+            R.id.action_cast -> {
+                showCastDialog()
+                true
+            }
             R.id.action_settings -> {
                 openSettings()
                 true
@@ -391,5 +525,9 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         const val JS_BRIDGE_NAME = "LXNative"
         const val REQUEST_NOTIFICATIONS = 2001
+
+        const val PAUSE_LOCAL_JS =
+            "(function(){try{var a=document.getElementById('audio-player')" +
+                "||document.querySelector('audio');if(a)a.pause();}catch(e){}})()"
     }
 }

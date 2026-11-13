@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.0.7 (2026-11-13)
+
+- **锁屏/通知栏显示真实播放进度**：之前 `PlaybackState` 用的是
+  `PLAYBACK_POSITION_UNKNOWN`、`MediaMetadata` 里也没有 `METADATA_KEY_DURATION`，
+  系统只能把进度画成 `----`。现在页面每秒上报 `currentTime / duration`，
+  进度条正常显示且**可以拖动**（`ACTION_SEEK_TO` → seek 页面 `<audio>`）。
+- **锁屏封面**：把页面封面地址（mediaSession artwork / `#player-cover`）传给原生，
+  带 WebView Cookie 拉取后设为 `ALBUM_ART`，不再是一张灰色占位图。
+- **DLNA / UPnP 投放（新增）**：工具栏「投放」→ 局域网扫描 MediaRenderer →
+  选中后把当前播放地址推给设备（音箱/电视），音频由设备自己回源拉流，手机只做遥控。
+  - 投放地址优先用同源地址（lxserver 的 `/api/music/download` 中转无鉴权，设备可直接拉）；
+    跨域直链自动包成同一中转，规避 B 站这类 Referer 防盗链。
+  - 投放期间本机静音、通知栏/锁屏的播放暂停与进度都改控设备（每 2 秒
+    `GetPositionInfo` 回填），停止投放会把设备进度带回本机续播。
+  - 发现用 SSDP + `MulticastLock`（不加锁很多机型搜不到设备），不引入第三方库。
+
 ## v1.0.6 (2026-11-13)
 
 修复「播放一会儿 App 自动关闭」——根因是两个结构性缺口，不是网页 bug：

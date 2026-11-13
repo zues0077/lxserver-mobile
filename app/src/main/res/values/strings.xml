@@ -7,6 +7,20 @@
     <string name="action_test">测试连接</string>
     <string name="action_save">保存</string>
 
+    <!-- DLNA 投放 -->
+    <string name="menu_cast">投放</string>
+    <string name="cast_title">投放</string>
+    <string name="cast_searching">正在搜索局域网里的 DLNA 设备…\n\n（音箱 / 电视需要和你的 lxserver 在同一个网段）</string>
+    <string name="cast_none">没有找到可投放的设备。\n\n请确认：\n• 音箱/电视已开机并连在同一个 Wi-Fi/局域网；\n• 设备支持 DLNA / UPnP 投放；\n• 路由器没有开启「AP 隔离」。</string>
+    <string name="cast_choose">选择投放设备</string>
+    <string name="cast_started">已投放到 %1$s</string>
+    <string name="cast_failed">投放失败：%1$s</string>
+    <string name="cast_now_playing">正在投放到 %1$s</string>
+    <string name="cast_stop">停止投放</string>
+    <string name="cast_stopped">已停止投放，继续本机播放</string>
+    <string name="cast_need_play">请先播放一首歌，再选择投放</string>
+    <string name="notif_casting_to">投放到 %1$s</string>
+
     <string name="hint_server_url">服务器地址（如 http://192.168.1.100:9527）</string>
     <string name="hint_username">登录用户名（可选，lxserver 的登录用户）</string>
     <string name="hint_user_password">用户密码（可选，配合上面的「登录用户名」）</string>
