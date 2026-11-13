@@ -118,23 +118,42 @@ object CastController {
         }.start()
     }
 
-    /** 停止投放，回调带回设备上的播放进度（毫秒），供本机续播。 */
+    /**
+     * 停止投放，回调带回设备上的播放进度（毫秒），供本机续播。
+     *
+     * 两处容易踩坑的地方：
+     *  1. 不能直接用 [lastPositionMs]——那是最多 2 秒前轮询到的值，设备若一直没回过
+     *     GetPositionInfo（或刚投放就停）它就是 0，本机会从头播。这里在停设备前
+     *     **主动再查一次**，拿不到才回落到轮询值。
+     *  2. 本机续播不能等设备 Stop 的 SOAP 往返：设备响应慢时手机会干等好几秒。
+     *     所以先回调让本机立刻播起来，Stop 放到同一后台线程的后半段去做。
+     */
     fun stop(done: ((Long) -> Unit)? = null) {
         val target = device
-        val position = lastPositionMs
+        val fallback = lastPositionMs
         stopPolling()
         device = null
         currentUri = ""
         isCasting = false
         playing = false
         Thread {
+            var position = fallback
+            if (target != null) {
+                try {
+                    val info = DlnaControl.getPosition(target)
+                    if (info != null && info.first > 0) position = info.first
+                } catch (_: Throwable) {
+                    // 设备已经掉线/不响应：保留轮询值，不要让本机卡住
+                }
+            }
+            // 先让本机从设备进度续播，不等 Stop
+            handler.post { done?.invoke(position) }
             if (target != null) {
                 try {
                     DlnaControl.stop(target)
                 } catch (_: Throwable) {
                 }
             }
-            handler.post { done?.invoke(position) }
         }.start()
     }
 

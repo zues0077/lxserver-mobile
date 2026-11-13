@@ -257,8 +257,11 @@ class MainActivity : AppCompatActivity() {
         if (artist.isNotEmpty()) lastArtist = artist
 
         if (CastController.isCasting) {
-            if (playing) {
-                // 页面开始播（多半是切歌）：本机立刻静音，并重新签发地址推给设备。
+            // 只有「真实的 play 事件」（切歌 / 用户点播放）才重新签发并推给设备。
+            // 页面每 5 秒的心跳也会上报 playing；若本机 audio 被意外恢复，心跳报 true
+            // 会走 pushTrack() 把同一首重新 SetAVTransportURI，音箱从头重放。
+            // 心跳在这里只该被忽略，切歌产生的真实 play 事件不受影响。
+            if (playing && !heartbeat) {
                 pauseLocalPlayback()
                 CastController.pushTrack(title, artist)
             }

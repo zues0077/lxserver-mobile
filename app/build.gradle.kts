@@ -15,8 +15,8 @@ android {
         // were derived from the base code with an offset, so a plain sequential bump
         // could look like a DOWNGRADE against an installed split APK and be refused.
         // Starting high guarantees every future version upgrades cleanly.
-        versionCode = 100005
-        versionName = "1.0.10"
+        versionCode = 100006
+        versionName = "1.0.11"
     }
 
     // NOTE: ABI splits were removed on purpose. This app ships NO native libraries,
