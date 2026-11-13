@@ -271,6 +271,18 @@ object DlnaControl {
         return Pair(position, duration)
     }
 
+    /**
+     * 设备当前的传输状态（PLAYING / TRANSITIONING / PAUSED_PLAYBACK / STOPPED / NO_MEDIA_PRESENT）。
+     *
+     * 用途：很多渲染器对「拉不动的地址」照样回 200，必须回查真实状态才知道到底播没播，
+     * 否则 App 会显示「已投放」而音箱其实在报错。
+     */
+    fun getTransportState(device: DlnaDevice): String {
+        val body = "<u:GetTransportInfo xmlns:u=\"$AVT\"><InstanceID>0</InstanceID></u:GetTransportInfo>"
+        val response = soap(device.controlUrl, AVT, "GetTransportInfo", body) ?: return ""
+        return tagValue(response, "CurrentTransportState").uppercase()
+    }
+
     private fun soap(controlUrl: String, service: String, action: String, innerBody: String): String? {
         val envelope = buildString {
             append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")

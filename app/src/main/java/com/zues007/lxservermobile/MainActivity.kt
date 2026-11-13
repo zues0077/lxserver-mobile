@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private var lastCastUrl: String = ""
     private var lastTitle: String = ""
     private var lastArtist: String = ""
+    private var lastDurationMs: Long = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -135,6 +136,7 @@ class MainActivity : AppCompatActivity() {
                     onPlaybackState(playing, title, artist, heartbeat, castUrl, coverUrl)
                 },
                 onProgress = { positionMs, durationMs ->
+                    lastDurationMs = durationMs
                     PlaybackService.updateLocalProgress(positionMs, durationMs)
                 }
             ),
@@ -256,8 +258,9 @@ class MainActivity : AppCompatActivity() {
 
         if (CastController.isCasting) {
             if (playing) {
+                // 页面开始播（多半是切歌）：本机立刻静音，并重新签发地址推给设备。
                 pauseLocalPlayback()
-                CastController.pushTrack(castUrl, title, artist)
+                CastController.pushTrack(title, artist)
             }
             return
         }
@@ -347,20 +350,58 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    /**
+     * 构造候选投放地址，按优先级排列，CastController 会逐个尝试直到设备真的起播：
+     *  1) 服务端签发的原格式地址（有正确后缀，电视/通用 DLNA 用这条，不转码、音质不降）
+     *  2) 服务端签发的 mp3 转码地址（小爱这类只吃 mp3 的设备用这条）
+     *  3) 原始中转地址兜底（服务端签发接口不可用时，至少还能试一次）
+     */
+    private fun castProviders(title: String, artist: String): List<() -> String?> {
+        val sourceUrl = lastCastUrl
+        val duration = lastDurationMs
+        val origin = CastStream.originOf(normalizeBase(prefs.serverUrl))
+        val cookie = CookieManager.getInstance().getCookie(origin)
+        val providers = ArrayList<() -> String?>()
+        providers.add {
+            val mime = CastStream.contentTypeOf(sourceUrl, cookie)
+            CastStream.mint(origin, cookie, sourceUrl, title, artist, duration, mime, null)
+        }
+        providers.add {
+            CastStream.mint(origin, cookie, sourceUrl, title, artist, duration, "", "mp3")
+        }
+        providers.add { sourceUrl.ifEmpty { null } }
+        return providers
+    }
+
     private fun startCast(device: DlnaDevice) {
         if (lastCastUrl.isEmpty()) {
             Toast.makeText(this, R.string.cast_need_play, Toast.LENGTH_SHORT).show()
             return
         }
-        CastController.start(device, lastCastUrl, lastTitle, lastArtist) { ok, error ->
+        // 切歌时用同一个构造器重新签发地址
+        CastController.setResolver { title, artist -> castProviders(title, artist) }
+
+        Toast.makeText(this, R.string.cast_connecting, Toast.LENGTH_SHORT).show()
+        CastController.start(device, lastTitle, lastArtist, castProviders(lastTitle, lastArtist)) {
+                ok, error, usedUrl ->
             if (ok) {
                 pauseLocalPlayback()
+                CrashLogger.logEvent(
+                    this,
+                    "cast_started",
+                    "device=${device.friendlyName} url=${usedUrl.take(140)}"
+                )
                 Toast.makeText(
                     this,
                     getString(R.string.cast_started, device.friendlyName),
                     Toast.LENGTH_SHORT
                 ).show()
             } else {
+                CrashLogger.logEvent(
+                    this,
+                    "cast_failed",
+                    "device=${device.friendlyName} reason=$error"
+                )
                 Toast.makeText(
                     this,
                     getString(R.string.cast_failed, error),

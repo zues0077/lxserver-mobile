@@ -8,9 +8,11 @@ import android.util.Log
  * 投放（DLNA）状态机。
  *
  * 音频由渲染器自己从 lxserver 回源拉流，手机只发控制指令：
- *  - start()  推地址 + Play
+ *  - start()  依次尝试若干候选地址（服务端签发的原格式 / mp3 转码版 / 原始中转地址），
+ *             每个地址推下去后用 GetTransportInfo 回查是否真的起播 —— 只看 SOAP 返回 200
+ *             是不够的，很多设备对拉不动的地址照样回 200，然后自己报「播放遇到问题」。
  *  - toggle() 通知栏/锁屏的播放暂停
- *  - pushTrack() 页面切歌后重新推一次地址
+ *  - pushTrack() 页面切歌后重新签发地址并推送
  *  - stop()   停设备，并把设备上的进度带回来给本机续播
  *
  * 进度靠每 2 秒 GetPositionInfo 回填到 MediaSession，这样锁屏进度条在投放时也准。
@@ -32,6 +34,9 @@ object CastController {
     private var currentUri: String = ""
     private var pollRunnable: Runnable? = null
 
+    /** 切歌时用来重新申请地址（由 MainActivity 注入）。 */
+    private var resolver: ((String, String) -> List<() -> String?>)? = null
+
     /** 设备最近一次上报的进度，断投时用它给本机续播。 */
     @Volatile
     private var lastPositionMs: Long = 0
@@ -40,34 +45,33 @@ object CastController {
 
     fun isPlaying(): Boolean = playing
 
+    fun setResolver(r: (String, String) -> List<() -> String?>) {
+        resolver = r
+    }
+
     fun start(
         target: DlnaDevice,
-        uri: String,
         title: String,
         artist: String,
-        done: (Boolean, String) -> Unit
+        providers: List<() -> String?>,
+        done: (Boolean, String, String) -> Unit
     ) {
-        if (uri.isEmpty()) {
-            done(false, "当前没有可投放的播放地址")
-            return
-        }
         Thread {
-            val ok = try {
-                DlnaControl.setUri(target, uri, title, artist) && DlnaControl.play(target)
-            } catch (t: Throwable) {
-                Log.w(TAG, "投放失败: ${t.message}")
-                false
-            }
-            if (ok) {
+            val startedUri = tryProviders(target, title, artist, providers)
+            if (startedUri != null) {
                 device = target
-                currentUri = uri
+                currentUri = startedUri
                 playing = true
                 lastPositionMs = 0
                 isCasting = true
                 startPolling()
                 PlaybackService.pushPlayingState(true)
+                handler.post { done(true, "", startedUri) }
+            } else {
+                handler.post {
+                    done(false, "设备没有开始播放（地址拉不动或格式不支持）", "")
+                }
             }
-            handler.post { done(ok, if (ok) "" else "设备没有接受播放指令") }
         }.start()
     }
 
@@ -100,26 +104,17 @@ object CastController {
     }
 
     /**
-     * 页面切歌（或用户点了播放）后，把新地址推给设备。
-     * 地址没变说明只是「继续播放」，直接 Play 即可，避免打断设备上的缓冲。
+     * 页面切歌后重新投放：地址要重新签发（签名带过期时间，且新歌是新的 URL）。
      */
-    fun pushTrack(uri: String, title: String, artist: String) {
+    fun pushTrack(title: String, artist: String) {
         val target = device ?: return
-        if (uri.isEmpty()) return
-        if (uri == currentUri) {
-            resume()
-            return
-        }
-        currentUri = uri
-        lastPositionMs = 0
+        val resolve = resolver ?: return
         Thread {
-            val ok = DlnaControl.setUri(target, uri, title, artist) && DlnaControl.play(target)
-            if (ok) {
-                playing = true
-                PlaybackService.pushPlayingState(true)
-            } else {
-                Log.w(TAG, "切歌推送失败: $title")
-            }
+            val startedUri = tryProviders(target, title, artist, resolve(title, artist)) ?: return@Thread
+            currentUri = startedUri
+            lastPositionMs = 0
+            playing = true
+            PlaybackService.pushPlayingState(true)
         }.start()
     }
 
@@ -142,6 +137,61 @@ object CastController {
             handler.post { done?.invoke(position) }
         }.start()
     }
+
+    // --------------------------------------------------------------- 内部
+
+    /**
+     * 按顺序尝试候选地址，返回第一个「真的起播」的地址。
+     * 每个候选都是阻塞操作（可能含服务端签发 + 转码预取），所以必须跑在后台线程。
+     */
+    private fun tryProviders(
+        target: DlnaDevice,
+        title: String,
+        artist: String,
+        providers: List<() -> String?>
+    ): String? {
+        var lastState = ""
+        for (provider in providers) {
+            val url = try {
+                provider()
+            } catch (t: Throwable) {
+                Log.w(TAG, "候选地址生成失败: ${t.message}")
+                null
+            }
+            if (url.isNullOrEmpty()) continue
+            lastState = pushAndWait(target, url, title, artist)
+            Log.i(TAG, "候选地址 ${url.take(90)} → $lastState")
+            if (isPlayable(lastState)) return url
+        }
+        Log.w(TAG, "所有候选地址都没起播，最后一次状态=$lastState")
+        return null
+    }
+
+    /** 推地址 + Play，然后在 6 秒内轮询传输状态，直到进入播放态。 */
+    private fun pushAndWait(
+        target: DlnaDevice,
+        url: String,
+        title: String,
+        artist: String
+    ): String {
+        if (!DlnaControl.setUri(target, url, title, artist)) return "SETURI_FAILED"
+        DlnaControl.play(target)
+        val deadline = System.currentTimeMillis() + 6000
+        var state = ""
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(700)
+            } catch (_: InterruptedException) {
+                break
+            }
+            state = DlnaControl.getTransportState(target)
+            if (isPlayable(state)) return state
+        }
+        return state
+    }
+
+    private fun isPlayable(state: String): Boolean =
+        state == "PLAYING" || state == "TRANSITIONING"
 
     private fun startPolling() {
         stopPolling()

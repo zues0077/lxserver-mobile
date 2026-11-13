@@ -14,6 +14,7 @@
     <string name="cast_none">没有找到可投放的设备。\n\n请确认：\n• 音箱/电视已开机并连在同一个 Wi-Fi/局域网；\n• 设备支持 DLNA / UPnP 投放；\n• 路由器没有开启「AP 隔离」。</string>
     <string name="cast_choose">选择投放设备</string>
     <string name="cast_started">已投放到 %1$s</string>
+    <string name="cast_connecting">正在连接设备，必要时会自动转成 mp3…</string>
     <string name="cast_failed">投放失败：%1$s</string>
     <string name="cast_now_playing">正在投放到 %1$s</string>
     <string name="cast_stop">停止投放</string>
