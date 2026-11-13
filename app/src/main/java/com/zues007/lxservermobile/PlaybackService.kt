@@ -56,6 +56,7 @@ class PlaybackService : Service() {
         when (command.action) {
             ACTION_START -> {
                 playing = true
+                userDismissed = false
                 command.getStringExtra(EXTRA_TITLE)?.let { title = it }
                 command.getStringExtra(EXTRA_ARTIST)?.let { artist = it }
                 cancelStop()
@@ -74,7 +75,11 @@ class PlaybackService : Service() {
             ACTION_TOGGLE -> WebViewBridge.runJs("typeof togglePlay==='function'&&togglePlay()")
             ACTION_NEXT -> WebViewBridge.runJs("typeof playNext==='function'&&playNext()")
             ACTION_PREV -> WebViewBridge.runJs("typeof playPrev==='function'&&playPrev()")
-            ACTION_STOP -> stopSafely()
+            ACTION_STOP -> {
+                // 用户主动关掉通知：记下来，避免页面心跳把服务立刻又拉起来。
+                userDismissed = true
+                stopSafely()
+            }
         }
         // 不用 START_STICKY：进程被重建时 WebView 已经没了，空跑的服务毫无意义。
         return START_NOT_STICKY
@@ -338,6 +343,10 @@ class PlaybackService : Service() {
 
         @Volatile
         var isRunning: Boolean = false
+
+        /** 用户从通知栏点了「关闭」；页面心跳不再自动拉起服务，直到下一次真实播放。 */
+        @Volatile
+        var userDismissed: Boolean = false
 
         /** 页面开始播放：拉起（或更新）前台服务。 */
         fun onPlaying(context: Context, title: String, artist: String) {

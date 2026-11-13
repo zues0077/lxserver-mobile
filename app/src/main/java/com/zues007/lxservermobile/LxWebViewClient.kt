@@ -108,22 +108,22 @@ class LxWebViewClient(
               if (!a) { var e2 = document.getElementById('player-artist'); if (e2) a = (e2.textContent || '').trim(); }
               return [t, a];
             }
-            function send(playing) {
+            function send(playing, heartbeat) {
               var m = meta();
               var key = (playing ? '1' : '0') + '|' + m[0] + '|' + m[1];
               if (key === last) return;
               last = key;
-              try { if (window.LXNative) window.LXNative.setPlayback(!!playing, m[0], m[1]); } catch (e) {}
+              try { if (window.LXNative) window.LXNative.setPlayback(!!playing, m[0], m[1], !!heartbeat); } catch (e) {}
             }
             function isAudio(el) { return !!el && el.tagName === 'AUDIO'; }
-            document.addEventListener('play', function(e){ if (isAudio(e.target)) send(true); }, true);
-            document.addEventListener('playing', function(e){ if (isAudio(e.target)) send(true); }, true);
-            document.addEventListener('pause', function(e){ if (isAudio(e.target)) send(false); }, true);
-            document.addEventListener('ended', function(e){ if (isAudio(e.target)) send(false); }, true);
+            document.addEventListener('play', function(e){ if (isAudio(e.target)) send(true, false); }, true);
+            document.addEventListener('playing', function(e){ if (isAudio(e.target)) send(true, false); }, true);
+            document.addEventListener('pause', function(e){ if (isAudio(e.target)) send(false, false); }, true);
+            document.addEventListener('ended', function(e){ if (isAudio(e.target)) send(false, false); }, true);
             setInterval(function(){
               var a = document.getElementById('audio-player') || document.querySelector('audio');
               if (!a) return;
-              send(!a.paused && !a.ended);
+              send(!a.paused && !a.ended, true);
             }, 5000);
           } catch (e) {}
         })();

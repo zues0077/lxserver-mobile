@@ -124,7 +124,9 @@ class MainActivity : AppCompatActivity() {
 
         // 页面 -> 原生：播放状态 / 歌名
         wv.addJavascriptInterface(
-            LxJsBridge { playing, title, artist -> onPlaybackState(playing, title, artist) },
+            LxJsBridge { playing, title, artist, heartbeat ->
+                onPlaybackState(playing, title, artist, heartbeat)
+            },
             JS_BRIDGE_NAME
         )
 
@@ -221,9 +223,19 @@ class MainActivity : AppCompatActivity() {
     /**
      * 网页里的 <audio> 一旦真正开始播放，就拉起前台服务把进程钉住；
      * 暂停/播完则交给服务在宽限期后自行收掉。
+     *
+     * heartbeat=true 表示这条来自页面每 5 秒的状态巡检。用户刚在通知栏点过
+     * 「关闭」的话，心跳不应该把服务重新拉起来（否则那个按钮等于没作用）；
+     * 只有真实的 play 事件才允许恢复。
      */
-    private fun onPlaybackState(playing: Boolean, title: String, artist: String) {
+    private fun onPlaybackState(
+        playing: Boolean,
+        title: String,
+        artist: String,
+        heartbeat: Boolean
+    ) {
         if (playing) {
+            if (heartbeat && PlaybackService.userDismissed) return
             PlaybackService.onPlaying(this, title, artist)
         } else {
             PlaybackService.onPaused(this)

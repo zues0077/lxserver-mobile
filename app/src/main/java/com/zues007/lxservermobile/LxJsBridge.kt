@@ -16,16 +16,21 @@ import android.webkit.JavascriptInterface
  * 否则启动服务、更新通知会踩到 "thread not main" 的坑。
  */
 class LxJsBridge(
-    private val onPlayback: (playing: Boolean, title: String, artist: String) -> Unit
+    private val onPlayback: (playing: Boolean, title: String, artist: String, heartbeat: Boolean) -> Unit
 ) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * @param heartbeat 是否来自 5 秒轮询（而不是真实的 play/pause 事件）。
+     *   用户从通知栏点「关闭」后，心跳不应该把服务又拉起来；只有真实的
+     *   播放事件才允许恢复。这个区分只能在 JS 侧标注。
+     */
     @JavascriptInterface
-    fun setPlayback(playing: Boolean, title: String?, artist: String?) {
+    fun setPlayback(playing: Boolean, title: String?, artist: String?, heartbeat: Boolean) {
         val t = title ?: ""
         val a = artist ?: ""
-        mainHandler.post { onPlayback(playing, t, a) }
+        mainHandler.post { onPlayback(playing, t, a, heartbeat) }
     }
 
     @JavascriptInterface
