@@ -1,5 +1,6 @@
 package com.zues007.lxservermobile
 
+import android.content.Context
 import android.util.Log
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -18,14 +19,28 @@ import java.net.URL
  * 返回 `/api/music/xiaoai/stream.<ext>?token=…`，带正确后缀、可被设备直接拉取。
  * 只签发地址，不涉及任何小米账号/设备。
  *
- * 鉴权：走 WebView 里的会话 Cookie（player.enableAuth 打开时必需）。
+ * 鉴权有两条路，两条都带上：
+ *  - `x-frontend-auth: <管理员密码>`（isXiaoAiRequestAuthorized 认这个，最可靠，不依赖 Cookie）
+ *  - WebView 的会话 Cookie（player.enableAuth 打开时生效）
+ * 这台库的 player.enableAuth = true，匿名请求会 401，所以管理员密码那条是主路。
  */
 object CastStream {
 
     private const val TAG = "LXSERVER_CAST"
 
+    /** 最近一次失败原因（给 UI 提示用）。 */
+    @Volatile
+    var lastError: String = ""
+        private set
+
+    private fun fail(context: Context?, reason: String) {
+        lastError = reason
+        Log.w(TAG, reason)
+        if (context != null) CrashLogger.logEvent(context, "cast_mint_failed", reason)
+    }
+
     /** 取 URL 的真实 Content-Type（服务端中转会把上游的 Content-Type 原样回传）。 */
-    fun contentTypeOf(url: String, cookie: String?): String {
+    fun contentTypeOf(url: String, cookie: String?, authHeader: String?): String {
         var conn: HttpURLConnection? = null
         return try {
             conn = URL(url).openConnection() as HttpURLConnection
@@ -33,6 +48,7 @@ object CastStream {
             conn.readTimeout = 6000
             conn.requestMethod = "HEAD"
             if (!cookie.isNullOrEmpty()) conn.setRequestProperty("Cookie", cookie)
+            if (!authHeader.isNullOrEmpty()) conn.setRequestProperty("x-frontend-auth", authHeader)
             val type = conn.contentType ?: ""
             type.split(';')[0].trim().lowercase()
         } catch (t: Throwable) {
@@ -50,11 +66,13 @@ object CastStream {
      * 申请签名播放地址。
      *
      * @param format "mp3" 表示让服务端统一转 mp3（设备只吃 mp3 时用）；null = 原格式。
-     * @return 可投放的绝对地址；失败返回 null。
+     * @return 可投放的绝对地址；失败返回 null（原因见 [lastError]）。
      */
     fun mint(
+        context: Context?,
         serverOrigin: String,
         cookie: String?,
+        authHeader: String?,
         sourceUrl: String,
         title: String,
         artist: String,
@@ -62,7 +80,11 @@ object CastStream {
         contentType: String,
         format: String?
     ): String? {
-        if (serverOrigin.isEmpty() || sourceUrl.isEmpty()) return null
+        lastError = ""
+        if (serverOrigin.isEmpty() || sourceUrl.isEmpty()) {
+            fail(context, "服务器地址或播放地址为空")
+            return null
+        }
         val payload = JSONObject().apply {
             put("url", sourceUrl)
             put("title", title)
@@ -75,11 +97,12 @@ object CastStream {
         return try {
             conn = URL("$serverOrigin/api/music/xiaoai/stream-url").openConnection() as HttpURLConnection
             conn.connectTimeout = 5000
-            conn.readTimeout = 8000
+            conn.readTimeout = 20000
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             if (!cookie.isNullOrEmpty()) conn.setRequestProperty("Cookie", cookie)
+            if (!authHeader.isNullOrEmpty()) conn.setRequestProperty("x-frontend-auth", authHeader)
             conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
             val text = if (code in 200..299) {
@@ -88,15 +111,23 @@ object CastStream {
                 conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
             }
             if (code !in 200..299) {
-                Log.w(TAG, "签发地址失败 HTTP $code: ${text.take(200)}")
-                return null
+                val hint = when (code) {
+                    401 -> "鉴权失败(401)：请在设置里填「管理员密码」"
+                    404 -> "服务器没有签发接口(404)：装的是旧版 lxserver"
+                    else -> "HTTP $code"
+                }
+                fail(context, "签发地址失败 $hint @ $serverOrigin ${text.take(120)}")
+                null
+            } else {
+                val data = JSONObject(text).optJSONObject("data")
+                val streamUrl = data?.optString("streamUrl") ?: ""
+                streamUrl.ifEmpty {
+                    fail(context, "签发接口没返回 streamUrl @ $serverOrigin")
+                    null
+                }
             }
-            val json = JSONObject(text)
-            val data = json.optJSONObject("data")
-            val streamUrl = data?.optString("streamUrl") ?: ""
-            streamUrl.ifEmpty { null }
         } catch (t: Throwable) {
-            Log.w(TAG, "签发地址异常: ${t.message}")
+            fail(context, "签发地址异常: ${t.message} @ $serverOrigin")
             null
         } finally {
             try {

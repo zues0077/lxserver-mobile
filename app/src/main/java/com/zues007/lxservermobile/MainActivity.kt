@@ -361,13 +361,21 @@ class MainActivity : AppCompatActivity() {
         val duration = lastDurationMs
         val origin = CastStream.originOf(normalizeBase(prefs.serverUrl))
         val cookie = CookieManager.getInstance().getCookie(origin)
+        // 这台库开了播放器密码（player.enableAuth=true），匿名请求签发接口会 401。
+        // 管理员密码走 x-frontend-auth 是服务端认的主路，Cookie 作为备用一并带上。
+        val auth = prefs.adminPassword
+        val context = applicationContext
         val providers = ArrayList<() -> String?>()
         providers.add {
-            val mime = CastStream.contentTypeOf(sourceUrl, cookie)
-            CastStream.mint(origin, cookie, sourceUrl, title, artist, duration, mime, null)
+            val mime = CastStream.contentTypeOf(sourceUrl, cookie, auth)
+            CastStream.mint(
+                context, origin, cookie, auth, sourceUrl, title, artist, duration, mime, null
+            )
         }
         providers.add {
-            CastStream.mint(origin, cookie, sourceUrl, title, artist, duration, "", "mp3")
+            CastStream.mint(
+                context, origin, cookie, auth, sourceUrl, title, artist, duration, "", "mp3"
+            )
         }
         providers.add { sourceUrl.ifEmpty { null } }
         return providers
@@ -397,14 +405,19 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_SHORT
                 ).show()
             } else {
+                val reason = if (CastStream.lastError.isNotEmpty()) {
+                    "$error｜${CastStream.lastError}"
+                } else {
+                    error
+                }
                 CrashLogger.logEvent(
                     this,
                     "cast_failed",
-                    "device=${device.friendlyName} reason=$error"
+                    "device=${device.friendlyName} reason=$reason"
                 )
                 Toast.makeText(
                     this,
-                    getString(R.string.cast_failed, error),
+                    getString(R.string.cast_failed, reason),
                     Toast.LENGTH_LONG
                 ).show()
             }
